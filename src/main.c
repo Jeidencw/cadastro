@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include "../include/person.h"
 
-#define DATABASE "database.txt"
+#define DATABASE_FORMAT     "%s, %s, %d\n"
+#define DATABASE            "database.txt"
 
 #define TEXT_ADD_PERSON     "1. Add a new person"
 #define TEXT_REMOVE_PERSON  "2. Remove a person"
@@ -13,6 +14,26 @@
 #define TEXT_FIND_PERSON    "5. Find a person"
 #define TEXT_EXIT           "6. Exit program"
 #define TEXT_CURSOR         "> "
+
+typedef enum{
+    option_add = 1,
+    option_remove,
+    option_update,
+    option_list,
+    option_find,
+    option_quit
+} option_t;
+
+typedef void (*option_base)(void);
+
+typedef struct{
+    option_t option;
+    option_base command;
+} options_struct_t;
+
+person_t person_create(void);
+char *person_input_name(void);
+void person_parser(char *buffer, person_t *person);
 
 void print_menu(void);
 bool option_select(int option);
@@ -23,17 +44,19 @@ void person_delete(void);
 void person_update(void);
 void person_list(void);
 void person_find(void);
+void person_quit(void);
 
 bool is_database_exists(void);
 
 int main(void){
     int option;
 
-    do{  
+    while(true){  
         print_menu();
         scanf("%d", &option);
         getchar();
-    } while (option_select(option));
+        option_select(option);
+    };
 
     return EXIT_SUCCESS;
 }
@@ -51,34 +74,22 @@ void print_menu(void){
 bool option_select(int option){
     bool status = true;
 
-    switch (option){
-    case  1:
-        //call a function to add new user
-        person_add_new();
-        break;
-    case 2:
-        //call a function to remove a user
-        person_delete();
-        break;
-    case 3:
-        //call a function to update a user
-        person_update();
-        break;
-    case 4:
-        //call a function to list all user
-        person_list();
-        break;
-    case 5:
-        //call a function to find a person
-        person_find();
-        break;
-    case 6:
-        status = false;
-        break;
-    default:
-        //show a message
-        printf("Opcao invalida\n");
-        break;
+    options_struct_t options[] = {
+        {.option = option_add,    .command = person_add_new},
+        {.option = option_remove, .command = person_delete},
+        {.option = option_update, .command = person_update},
+        {.option = option_list,   .command = person_list},
+        {.option = option_find,   .command = person_find},
+        {.option = option_quit,   .command = person_quit},
+    };
+
+    int list_size = sizeof(options) / sizeof(options[0]);
+
+    for(int i = 0; i < list_size; i++){
+        if(option == options[i].option){
+            options[i].command();
+            break;
+        }
     }
 
     return status;
@@ -88,17 +99,7 @@ void person_add_new(void){
     person_t person;
     FILE *f;
 
-    printf("Type a name: ");
-    fgets(person.name, PERSON_NAME_LEN - 1, stdin);
-    person.name[strlen(person.name) - 1] = 0;
-
-    printf("Type an addrress: ");
-    fgets(person.address, PERSON_ADDRESS_LEN - 1, stdin);
-    person.address[strlen(person.address) - 1] = 0;
-
-    printf("Type an age: ");
-    scanf("%d", &person.age);
-    getchar();
+    person = person_create();
 
 
     if(is_database_exists() == false){
@@ -108,7 +109,7 @@ void person_add_new(void){
     }
 
     char format[250] = "";
-    snprintf(format, 250, "%s, %s, %d\n", person.name, person.address, person.age);
+    snprintf(format, 250, DATABASE_FORMAT, person.name, person.address, person.age);
     fprintf(f, "%s", format);
     fclose(f);
 }
@@ -127,20 +128,12 @@ void person_delete(void){
         char buffer[250] = "";
         fgets(buffer, 250, f);
 
-        char *data = strtok(buffer, ",");
-        strncpy(persons[i].name, data, PERSON_NAME_LEN);
-        data = strtok(NULL, ",");
-        strncpy(persons[i].address, data, PERSON_NAME_LEN);
-        data = strtok(NULL, ",");
-        persons[i].age = atoi(data);
+        person_parser(buffer, &persons[i]);
     }    
 
     fclose(f);
 
-    char name_delete[PERSON_NAME_LEN] = "";
-    printf("Type a name to delete: ");
-    fgets(name_delete, PERSON_NAME_LEN - 1, stdin);
-    name_delete[strlen(name_delete) - 1] = 0;
+    char *name_delete = person_input_name();
 
     for(int i = 0; i < items; i++){
         if(strncmp(name_delete, persons[i].name, PERSON_NAME_LEN) == 0){
@@ -155,9 +148,10 @@ void person_delete(void){
         if(persons[i].name[0] == '\0' || persons[i].address[0] == '\0')
             continue;
         
-        fprintf(f, "%s, %s, %d\n", persons[i].name, persons[i].address, persons[i].age);
+        fprintf(f, DATABASE_FORMAT, persons[i].name, persons[i].address, persons[i].age);
     }
 
+    free(name_delete);
     free(persons);
     fclose(f);
 }
@@ -177,20 +171,12 @@ void person_update(void){
         char buffer[250] = "";
         fgets(buffer, 250, f);
 
-        char* data = strtok(buffer, ",");
-        strncpy(persons[i].name, data, PERSON_NAME_LEN);
-        data = strtok(NULL, ",");
-        strncpy(persons[i].address, data, PERSON_NAME_LEN);
-        data = strtok(NULL, ",");
-        persons[i].age = atoi(data);
+        person_parser(buffer, &persons[i]);
     }
 
     fclose(f);
 
-    char name_update[PERSON_NAME_LEN] = "";
-    printf("Type a name to update: ");
-    fgets(name_update, PERSON_ADDRESS_LEN - 1, stdin);
-    name_update[strlen(name_update) - 1] = 0;
+    char *name_update = person_input_name();
 
     for (int i = 0; i < items; i++) {
         if (strncmp(name_update, persons[i].name, PERSON_NAME_LEN) == 0) {
@@ -202,18 +188,7 @@ void person_update(void){
     if (id != -1) {
         memset(&persons[id], 0, sizeof(person_t));
 
-        printf("Type a name: ");
-        fgets(persons[id].name, PERSON_NAME_LEN - 1, stdin);
-        persons[id].name[strlen(persons[id].name) - 1] = 0;
-
-        printf("Type an addrress: ");
-        fgets(persons[id].address, PERSON_ADDRESS_LEN - 1, stdin);
-        persons[id].address[strlen(persons[id].address) - 1] = 0;
-
-        printf("Type an age: ");
-        scanf("%d", &persons[id].age);
-        getchar();
-
+        persons[id] = person_create();
     }
 
     f = fopen(DATABASE, "w");
@@ -222,9 +197,10 @@ void person_update(void){
         if (persons[i].name[0] == '\0' || persons[i].address[0] == '\0')
             continue;
 
-        fprintf(f, "%s, %s, %d\n", persons[i].name, persons[i].address, persons[i].age);
+        fprintf(f, DATABASE_FORMAT, persons[i].name, persons[i].address, persons[i].age);
     }
 
+    free(name_update);
     free(persons);
     fclose(f);
 }
@@ -249,11 +225,7 @@ void person_list(void){
 }
 
 void person_find(void){
-    char name_find[PERSON_NAME_LEN] = "";
-
-    printf("Type a name to find: ");
-    fgets(name_find, PERSON_NAME_LEN - 1, stdin);
-    name_find[strlen(name_find) - 1] = 0;
+    char *name_find = person_input_name();
 
     if(is_database_exists()){
         FILE *f = fopen(DATABASE, "r");
@@ -283,9 +255,15 @@ void person_find(void){
             }
             putc('\n', stdout);
         }
+
+        free(name_find);
         free(buffer);
         fclose(f);
     }
+}
+
+void person_quit(void){
+    exit(0);
 }
 
 bool is_database_exists(void){
@@ -321,4 +299,46 @@ int count_items(void){
     fclose(f);
 
     return items;
+}
+
+person_t person_create(void){
+    person_t person;
+
+    printf("Type a name: ");
+    fgets(person.name, PERSON_NAME_LEN - 1, stdin);
+    person.name[strlen(person.name) - 1] = 0;
+
+    printf("Type an addrress: ");
+    fgets(person.address, PERSON_ADDRESS_LEN - 1, stdin);
+    person.address[strlen(person.address) - 1] = 0;
+
+    printf("Type an age: ");
+    scanf("%d", &person.age);
+    getchar();
+
+    return person;
+}
+
+
+char *person_input_name(void){
+    char *name = calloc(1, PERSON_NAME_LEN + 1);
+
+    printf("Type a name to modify: ");
+
+    fgets(name, PERSON_NAME_LEN - 1, stdin);
+    name[strlen(name) - 1] = 0;
+
+    return name;
+}
+
+void person_parser(char *buffer, person_t *person){
+    if(person == NULL || buffer == NULL)
+        return;
+    
+    char *data = strtok(buffer, ",");
+    strncpy(person->name, data, PERSON_NAME_LEN);
+    data = strtok(NULL, ",");
+    strncpy(person->address, data, PERSON_NAME_LEN);
+    data = strtok(NULL, ",");
+    person->age = atoi(data);
 }
